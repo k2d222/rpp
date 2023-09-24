@@ -162,12 +162,9 @@ CLI App::parseCLI(int argc, char** argv) {
             if (!std::filesystem::is_regular_file(input))
                 exitWithError(argv[0], "input file not found");
 
-            cli.inputFiles.push_back(arg);
+            cli.input = arg;
         }
     }
-
-    if (cli.inputFiles.size() > 1 && cli.skipPreprocessor)
-        exitWithError(argv[0], "too many input files");
 
     std::reverse(cli.includes.begin(), cli.includes.end());
     return cli;
@@ -180,47 +177,45 @@ int App::exec(int argc, char** argv) {
         using namespace std::chrono;
         auto beg = high_resolution_clock::now();
 
-        for (auto const& input : cli.inputFiles) {
-            max_memory = 0;
-            ExternalResource::get().clear();
+        max_memory = 0;
+        ExternalResource::get().clear();
 
-            InputStream inputStream(FileR::read(input));
+        InputStream inputStream(FileR::read(cli.input));
 
-            Tokenizer tokenizer;
-            tokenizer.run(inputStream);
+        Tokenizer tokenizer;
+        tokenizer.run(inputStream);
 
-            Preprocessor preprocessor(tokenizer.data());
-            preprocessor.run(input, cli);
-            if (preprocessor.failed())
-                continue;
+        Preprocessor preprocessor(tokenizer.data());
+        preprocessor.run(cli.input, cli);
+        if (preprocessor.failed())
+            return 1;
 
-            max_memory = preprocessor.memory();
+        max_memory = preprocessor.memory();
 
-            AbstractSyntaxTree abstractSyntaxTree;
-            {
-                TokenStream tokenStream(preprocessor.data());
+        AbstractSyntaxTree abstractSyntaxTree;
+        {
+            TokenStream tokenStream(preprocessor.data());
 
-                ParseTree parseTree;
-                parseTree.create(tokenStream);
+            ParseTree parseTree;
+            parseTree.create(tokenStream);
 
-                Parser parser;
-                parser.parse(parseTree, tokenStream);
-                if (parser.failed())
-                    continue;
+            Parser parser;
+            parser.parse(parseTree, tokenStream);
+            if (parser.failed())
+                return 1;
 
-                abstractSyntaxTree.create(parseTree);
-                parser.parse(abstractSyntaxTree);
-                if (parser.failed())
-                    continue;
-            }
-
-            Translator translator;
-            translator.run(abstractSyntaxTree);
-            if (translator.failed())
-                continue;
-
-            RulesGen::exec(translator.automappers(), preprocessor.output());
+            abstractSyntaxTree.create(parseTree);
+            parser.parse(abstractSyntaxTree);
+            if (parser.failed())
+                return 1;
         }
+
+        Translator translator;
+        translator.run(abstractSyntaxTree);
+        if (translator.failed())
+            return 1;
+
+        RulesGen::exec(translator.automappers(), preprocessor.output());
 
         auto end = high_resolution_clock::now();
         auto time = duration_cast<duration<double>>(end - beg).count();
@@ -234,8 +229,9 @@ int App::exec(int argc, char** argv) {
     }
     catch (const std::overflow_error& error) {
         std::cout << error.what() << '\n';
-        pause();
-        return 0;
+        if (cli.pause)
+            pause();
+        return 1;
     }
 }
 

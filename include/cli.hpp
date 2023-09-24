@@ -28,7 +28,7 @@
 #include <filesystem>
 
 struct CLI {
-    std::vector<std::filesystem::path> inputFiles;
+    std::filesystem::path input;
     std::optional<std::filesystem::path> output;
     std::optional<int64_t> memory;
     std::vector<std::filesystem::path> includes;
